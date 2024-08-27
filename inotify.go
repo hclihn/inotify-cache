@@ -69,8 +69,7 @@ func InMaskToString(in_mask uint32) string {
   var sb strings.Builder
   // each mask is one bit
   hasName := false
-  for i := 0; i < 32 && in_mask > 0; i++ {
-    m := uint32(1)<<i
+  for i, m := 0, uint32(1); i < 32 && in_mask > 0; i++ {
     if in_mask&m != 0 {
       in_mask &^= m
       name, ok := in_mapping[i]
@@ -83,6 +82,7 @@ func InMaskToString(in_mask uint32) string {
       sb.WriteString(name)
       hasName = true
     }
+    m <<= 1
   }
   return sb.String()
 }
@@ -648,6 +648,7 @@ func (e *InotifyEpoller) Wait(timeout int) error {
       } else if n == 0 {
         continue
       }
+      var wg sync.WaitGroup
       for i := 0; i < n; i++ {
         ev := events[i]
         if ev.Events == 0 {
@@ -660,9 +661,14 @@ func (e *InotifyEpoller) Wait(timeout int) error {
         iw, ok := e.watchers[int(ev.Fd)]
         e.mu.RUnlock()
         if ok {
-          go iw.Process()
+          wg.Add(1)
+          go func() {
+            iw.Process()
+            wg.Done()
+          }()
         }
       }
+      wg.Wait()
     }
   }
 }

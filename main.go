@@ -249,9 +249,9 @@ func main() {
 		fmt.Println("Done testing!")
 		wg.Done()
 	}()
-	//fmt.Printf("Mask: %s\n", InMaskToString(0xffffffff))
 	wg.Wait()
 	fmt.Printf("Epoll: %s\n", ep)
 	fmt.Println("Time is up!")
+	fmt.Printf("Mask: %s\n", InMaskToString(0xffffffff))
 	cancel()
 }
