@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 	"log"
 	"context"
@@ -13,10 +14,13 @@ import (
 )
 
 const (
-	baseDir = "/home/runner/inotify-cache"
-	confDir = baseDir + "/conf"
-	certDir = baseDir + "/certs"
-	specialPath = baseDir + "/conf/test.txt"
+	dataFile = "..data"
+	specialFile = "test.txt"
+
+	certContent  = "This is a test cert."
+	cert1Content = "This is a test cert1."
+	conf1Content = "This is the test #1 conf."
+	conf2Content = "This is the test #2 conf."
 )
 
 type Handler struct {
@@ -72,7 +76,69 @@ func (h *Handler) Update(event *InotifyEvent) {
 	}
 }
 
-func ModConf(useRename bool) {
+func newTextFile(thePath, content string) error {
+	fp, err := os.Create(thePath)
+	if err != nil {
+		return fmt.Errorf("failed create %q: %w", thePath, err)
+	}
+	defer fp.Close()
+	if _, err := fp.WriteString(content); err != nil {
+		return fmt.Errorf("failed write content to %q: %w", thePath, err)
+	}
+	return nil
+}
+
+func SetupDirs() string {
+	var hasErr bool
+	baseDir, err := os.MkdirTemp("", "")
+	if err != nil {
+		log.Fatalf("Error creating temp directory: %v", err)
+	}
+	defer func() {
+		if hasErr {
+			os.RemoveAll(baseDir)
+		}
+	}()
+	confDir := baseDir + "/conf"
+	certDir := baseDir + "/certs"
+
+	if err := os.MkdirAll(certDir+"/temp", 0755); err != nil {
+		hasErr = true
+		log.Fatalf("failed to setup dirs when creating temp in certDir: %v!", err)
+	}
+	if err := newTextFile(certDir+"/test.crt", certContent); err != nil {
+		hasErr = true
+		log.Fatalf("failed to set up file test.crt in certDir: %v!", err)
+	}
+	if err := os.MkdirAll(confDir+"/..t1", 0755); err != nil {
+		hasErr = true
+		log.Fatalf("failed to setup dirs when creating ..t1 in confDir: %v!", err)
+	}
+	if err := newTextFile(confDir+"/..t1/test.txt", conf1Content); err != nil {
+		hasErr = true
+		log.Fatalf("failed to set up file ..t1/test.txt in confDir: %v!", err)
+	}
+	if err := os.MkdirAll(confDir+"/..t2", 0755); err != nil {
+		hasErr = true
+		log.Fatalf("failed to setup dirs when creating ..t2 in confDir: %v!", err)
+	}
+	if err := newTextFile(confDir+"/..t2/test.txt", conf2Content); err != nil {
+		hasErr = true
+		log.Fatalf("failed to set up file ..t2/test.txt in confDir: %v!", err)
+	}
+	if err := os.Symlink("..t1", confDir+"/..data"); err != nil {
+		hasErr = true
+		log.Fatalf("failed to set up symlink file ..data in confDir: %v!", err)
+	}
+	if err := os.Symlink("..data/test.txt", filepath.Join(confDir, specialFile)); err != nil {
+		hasErr = true
+		log.Fatalf("failed to set up symlink file test.txt in confDir: %v!", err)
+	}
+	return baseDir
+}
+
+func ModConf(baseDir string, useRename bool) {
+	confDir := baseDir + "/conf"
 	s, err := os.Readlink(confDir+ "/..data")
 	if err != nil {
 		log.Printf("ERROR: Failed read ..data: %v\n", err)
@@ -101,7 +167,8 @@ func ModConf(useRename bool) {
 	}
 }
 
-func ModCert(useRename bool, ep *InotifyEpoller) {
+func ModCert(baseDir string, useRename bool, ep *InotifyEpoller) {
+	certDir := baseDir + "/certs"
 	if useRename {
 		fp, err := os.Create(baseDir+"/test.crt1")
 		if err != nil {
@@ -178,6 +245,12 @@ func ShowSpecial(h *Handler) {
 }
 
 func main() {
+	baseDir := SetupDirs()
+	defer os.RemoveAll(baseDir)
+
+	confDir := baseDir + "/conf"
+	certDir := baseDir + "/certs"
+	specialPath := filepath.Join(confDir, specialFile)
 	h, err := NewHandler(specialPath)
 	if err != nil {
 		panic(err)
@@ -226,23 +299,23 @@ func main() {
 	go func() {
 		ShowSpecial(h)
 		time.Sleep(time.Second)
-		ModConf(true)
+		ModConf(baseDir, true)
 		time.Sleep(100*time.Millisecond)
 		ShowSpecial(h)
 		
 		time.Sleep(time.Second)
-		ModCert(true, ep)
+		ModCert(baseDir, true, ep)
 		
 		time.Sleep(time.Second)
-		ModConf(false)
+		ModConf(baseDir, false)
 		time.Sleep(100*time.Millisecond)
 		ShowSpecial(h)
 
 		time.Sleep(time.Second)
-		ModCert(false, ep)
+		ModCert(baseDir, false, ep)
 		
 		time.Sleep(time.Second)
-		ModConf(true)
+		ModConf(baseDir, true)
 		time.Sleep(100*time.Millisecond)
 		ShowSpecial(h)
 		time.Sleep(2 *time.Second)
